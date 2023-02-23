@@ -1,0 +1,176 @@
+name: "Magento 2 artifact deployment"
+
+on:
+  workflow_call:
+    inputs:
+      deploy-environment:
+        description: "GitHub environment to run against"
+        required: true
+        type: environment
+      deploy-target:
+        description: "The deployment target environment"
+        options:
+          - "staging"
+          - "production"
+        required: true
+        type: "choice"
+      languages:
+        default: "en_US"
+        required: false
+        type: string
+      php-version:
+        default: "8.1"
+        description: "The target PHP version"
+        options:
+          - "7.4"
+          - "8.1"
+          - "8.2"
+        required: false
+        type: "choice"
+      working-directory:
+        default: "${{ github.workspace }}/src"
+        required: false
+        type: string
+    secrets:
+      composer-auth:
+        description: "Composer authorization credentials"
+        required: true
+      deploy-ssh-host:
+        description: "Deployment server hostname"
+        required: true
+      deploy-ssh-key:
+        description: "Deployment server SSH key"
+        required: true
+      github-token:
+        description: "GitHub access token"
+        required: true
+
+env:
+  DEPLOY_ENVIRONMENT: "${{ inputs.deploy-environment }}"
+  DEPLOY_TARGET: "${{ inputs.deploy-target }}"
+  LANGUAGES: "${{ inputs.languages }}"
+  PHP_VERSION: "${{ inputs.php-version }}"
+  WORKING_DIR: "${{ inputs.working-directory }}"
+
+jobs:
+  deploy-project-artifact:
+    runs-on: ubuntu-latest
+    environment:
+      name: "${{ env.DEPLOY_ENVIRONMENT }}"
+      url: "${{ vars.SITE_URL }}"
+    steps:
+      - name: "Check out project code repository"
+        uses: "actions/checkout@v3"
+
+      - name: "Configure PHP environment for artifact build"
+        uses: "shivammathur/setup-php@v2"
+        with:
+          coverage: "none"
+          extensions: ":xdebug"
+          php-version: "${{ env.PHP_VERSION }}"
+          tools: "composer:v2, deployer:7.2"
+        env:
+          GITHUB_TOKEN: "${{ secrets.github-token }}"
+
+      - name: "Verify project Composer lock exists"
+        id: "verify-composer-file"
+        uses: "andstor/file-existence-action@v2"
+        with:
+          files: "${{ env.WORKING_DIR }}/composer.lock"
+
+      - name: "Add Composer authorization credentials"
+        if: steps.verify-composer-file.outputs.files_exists == 'true'
+        shell: "bash"
+        run: |
+          echo '${{ secrets.composer-auth }}' > ${{ env.WORKING_DIR }}/auth.json
+
+      - name: "Determine Composer cache directory"
+        id: "composer-cache"
+        shell: "bash"
+        run: |
+          echo "dir=$(composer --working-dir=${{ env.WORKING_DIR }} config cache-files-dir)" >> $GITHUB_OUTPUT
+
+        # Using separate cache action until "ramsey/composer-install" fixes caching
+      - name: "Use cached Composer assets if available"
+        uses: "actions/cache@v3"
+        with:
+          key: "${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}"
+          path: "${{ steps.composer-cache.outputs.dir }}"
+          restore-keys: |
+            ${{ runner.os }}-composer-
+
+      - name: "Install Composer packages"
+        uses: "ramsey/composer-install@v2"
+        with:
+          composer-options: "--no-progress --no-interaction --no-scripts --no-dev --prefer-dist"
+          dependency-versions: "locked"
+          ignore-cache: true # see above caching step
+          working-directory: "${{ env.WORKING_DIR }}"
+
+      - name: "Compile Magento 2 dependency injection"
+        if: success()
+        shell: "bash"
+        run: |
+          php ${{ env.WORKING_DIR }}/bin/magento setup:di:compile --no-ansi --no-interaction
+
+      - name: "Magento 2: enable production mode"
+        if: success()
+        shell: "bash"
+        run: |
+          touch ${{ env.WORKING_DIR }}/app/etc/env.php
+          echo '<?php return ["MAGE_MODE" => "production"];' > ${{ env.WORKING_DIR }}/app/etc/env.php
+
+      - name: "Magento 2: compile dependency injection"
+        if: success()
+        shell: "bash"
+        run: |
+          php ${{ env.WORKING_DIR }}/bin/magento setup:di:compile --no-interaction
+
+      - name: "Magento 2: generate static content assets"
+        if: success()
+        shell: "bash"
+        run: |
+          php ${{ env.WORKING_DIR }}/bin/magento setup:static-content:deploy -f --no-interaction --jobs 2 -- ${{ env.LANGUAGES }}
+
+      - name: "Magento 2: dump optimized Composer autoload files"
+        if: success()
+        shell: "bash"
+        run: |
+          composer --working-dir=${{ env.WORKING_DIR }} dump-autoload --optimize --apcu --no-dev
+
+      - name: "Magento 2: normalize filesystem permissions"
+        if: success()
+        shell: "bash"
+        run: |
+          find ${{ env.WORKING_DIR }} -type d ! -perm 2770 -exec chmod 2755 {} +
+          find ${{ env.WORKING_DIR }} -type f ! -path '*bin/*' ! -name '*.sh' ! -perm 0660 -exec chmod 0644 {} +
+
+      - name: "Magento 2: create artifact ID file"
+        uses: "petemcw/deploy-artifact-id@v1"
+        with:
+          filename: "VERSION"
+          working-directory: "${{ env.WORKING_DIR }}/pub"
+
+      - name: "Magento 2: build and upload artifact"
+        uses: "petemcw/deploy-artifact-upload@v1"
+        with:
+          exclude-file: "${{ github.workspace }}/deploy/.excludes"
+          if-no-files-found: "error"
+          name: "magento2-artifact"
+          retention-days: 1
+
+      - name: "Magento 2: add SSH deployment server known hosts"
+        if: success()
+        shell: "bash"
+        run: |
+          KNOWN_HOSTS=$(ssh-keyscan -H ${{ secrets.deploy-ssh-host }})
+          echo "KNOWN_HOSTS=$KNOWN_HOSTS" >> $GITHUB_ENV
+
+      - name: "Magento 2: deploy build artifact to deployment server"
+        uses: "deployphp/action@v1"
+        if: success()
+        with:
+          dep: "deploy:artifact ${{ env.DEPLOYER_ENVIRONMENT }} -v"
+          deployer-binary: "/usr/local/bin/deployer"
+          known-hosts: "${{ env.KNOWN_HOSTS }}"
+          private-key: "${{ secrets.deploy-ssh-key }}"
