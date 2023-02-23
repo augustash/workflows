@@ -41,17 +41,16 @@ on:
         required: true
 
 env:
-  DEPLOY_ENVIRONMENT: "${{ inputs.deploy-environment }}"
   DEPLOY_TARGET: "${{ inputs.deploy-target }}"
   LANGUAGES: "${{ inputs.languages }}"
   PHP_VERSION: "${{ inputs.php-version }}"
   WORKING_DIR: "${{ inputs.working-directory }}"
 
 jobs:
-  deploy-project-artifact:
+  deploy-magento2-artifact:
     runs-on: ubuntu-latest
     environment:
-      name: "${{ env.DEPLOY_ENVIRONMENT }}"
+      name: "${{ inputs.deploy-environment }}"
       url: "${{ vars.SITE_URL }}"
     steps:
       - name: "Check out project code repository"
