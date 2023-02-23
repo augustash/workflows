@@ -23,7 +23,8 @@ on:
         required: true
         type: "string"
       working-directory:
-        default: "${{ github.workspace }}/src"
+        default: ""
+        description: "The directory, relative to the repository root, where the Magento 2 source is located."
         required: true
         type: string
     secrets:
@@ -44,7 +45,7 @@ env:
   DEPLOY_TARGET: "${{ inputs.deploy-target }}"
   LANGUAGES: "${{ inputs.languages }}"
   PHP_VERSION: "${{ inputs.php-version }}"
-  WORKING_DIR: "${{ inputs.working-directory }}"
+  WORKING_DIR: "${{ github.workspace }}${{ inputs.working-directory }}"
 
 jobs:
   deploy-magento2-artifact:
