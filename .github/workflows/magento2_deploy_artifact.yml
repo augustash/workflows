@@ -27,6 +27,10 @@ on:
         description: "The directory, relative to the repository root, where the Magento 2 source is located."
         required: true
         type: string
+    outputs:
+      composer-cache-dir:
+        description: "The Composer cache directory"
+        value: "${{ jobs.deploy-magento2-artifact.outputs.composer-cache-dir }}"
     secrets:
       composer-auth:
         description: "Composer authorization credentials"
@@ -53,6 +57,8 @@ jobs:
     environment:
       name: "${{ inputs.deploy-environment }}"
       url: "${{ vars.SITE_URL }}"
+    outputs:
+      composer-cache-dir: "${{ steps.composer-cache.outputs.dir }}"
     steps:
       - name: "Check out project code repository"
         uses: "actions/checkout@v3"
