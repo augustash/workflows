@@ -23,9 +23,14 @@ on:
         required: true
         type: "string"
       working-directory:
-        default: "${{ github.workspace }}/src"
+        default: ""
+        description: "The directory, relative to the repository root, where the Magento 2 source is located."
         required: true
         type: string
+    outputs:
+      composer-cache-dir:
+        description: "The Composer cache directory"
+        value: "${{ jobs.deploy-magento2-artifact.outputs.composer-cache-dir }}"
     secrets:
       composer-auth:
         description: "Composer authorization credentials"
@@ -41,18 +46,19 @@ on:
         required: true
 
 env:
-  DEPLOY_ENVIRONMENT: "${{ inputs.deploy-environment }}"
   DEPLOY_TARGET: "${{ inputs.deploy-target }}"
   LANGUAGES: "${{ inputs.languages }}"
   PHP_VERSION: "${{ inputs.php-version }}"
-  WORKING_DIR: "${{ inputs.working-directory }}"
+  WORKING_DIR: "${{ github.workspace }}${{ inputs.working-directory }}"
 
 jobs:
-  deploy-project-artifact:
+  deploy-magento2-artifact:
     runs-on: ubuntu-latest
     environment:
-      name: "${{ env.DEPLOY_ENVIRONMENT }}"
+      name: "${{ inputs.deploy-environment }}"
       url: "${{ vars.SITE_URL }}"
+    outputs:
+      composer-cache-dir: "${{ steps.composer-cache.outputs.dir }}"
     steps:
       - name: "Check out project code repository"
         uses: "actions/checkout@v3"
@@ -165,7 +171,7 @@ jobs:
         uses: "deployphp/action@v1"
         if: success()
         with:
-          dep: "deploy:artifact ${{ env.DEPLOYER_ENVIRONMENT }} -v"
+          dep: "deploy:artifact ${{ env.DEPLOY_TARGET }} -v"
           deployer-binary: "/usr/local/bin/deployer"
           known-hosts: "${{ env.KNOWN_HOSTS }}"
           private-key: "${{ secrets.deploy-ssh-key }}"
