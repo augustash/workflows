@@ -112,7 +112,7 @@ jobs:
         if: success()
         shell: "bash"
         run: |
-          php ${{ env.WORKING_DIR }}/bin/magento setup:di:compile --no-ansi --no-interaction
+          php ${{ env.WORKING_DIR }}/bin/magento setup:di:compile --no-interaction
 
       - name: "Magento 2: enable production mode"
         if: success()
@@ -120,12 +120,6 @@ jobs:
         run: |
           touch ${{ env.WORKING_DIR }}/app/etc/env.php
           echo '<?php return ["MAGE_MODE" => "production"];' > ${{ env.WORKING_DIR }}/app/etc/env.php
-
-      - name: "Magento 2: compile dependency injection"
-        if: success()
-        shell: "bash"
-        run: |
-          php ${{ env.WORKING_DIR }}/bin/magento setup:di:compile --no-interaction
 
       - name: "Magento 2: generate static content assets"
         if: success()
