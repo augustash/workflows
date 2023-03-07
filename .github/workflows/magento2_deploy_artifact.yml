@@ -27,6 +27,11 @@ on:
         description: "The target PHP version"
         required: true
         type: "string"
+      verbosity:
+        default: "-v"
+        description: "The verbosity level used by Composer, Deployer, and Magento 2 CLI commands"
+        required: true
+        type: "string"
       working-directory:
         default: ""
         description: "The directory, relative to the repository root, where the Magento 2 source is located."
@@ -55,6 +60,7 @@ env:
   JOBS: "${{ inputs.jobs }}"
   LANGUAGES: "${{ inputs.languages }}"
   PHP_VERSION: "${{ inputs.php-version }}"
+  VERBOSITY: "${{ inputs.verbosity }}"
   WORKING_DIR: "${{ github.workspace }}${{ inputs.working-directory }}"
 
 jobs:
@@ -109,7 +115,7 @@ jobs:
       - name: "Install Composer packages"
         uses: "ramsey/composer-install@v2"
         with:
-          composer-options: "--no-progress --no-interaction --no-scripts --no-dev --prefer-dist"
+          composer-options: "${{ env.VERBOSITY }} --no-progress --no-interaction --no-scripts --no-dev --prefer-dist"
           dependency-versions: "locked"
           ignore-cache: true # see above caching step
           working-directory: "${{ env.WORKING_DIR }}"
@@ -118,7 +124,7 @@ jobs:
         if: success()
         shell: "bash"
         run: |
-          php ${{ env.WORKING_DIR }}/bin/magento setup:di:compile --no-interaction
+          php ${{ env.WORKING_DIR }}/bin/magento ${{ env.VERBOSITY }} setup:di:compile --no-interaction --ansi
 
       - name: "Magento 2: enable production mode"
         if: success()
@@ -132,13 +138,13 @@ jobs:
         if: success()
         shell: "bash"
         run: |
-          php ${{ env.WORKING_DIR }}/bin/magento setup:static-content:deploy -f --no-interaction --jobs ${{ env.JOBS }} -- ${{ env.LANGUAGES }}
+          php ${{ env.WORKING_DIR }}/bin/magento ${{ env.VERBOSITY }} setup:static-content:deploy -f --no-interaction --ansi --jobs ${{ env.JOBS }} -- ${{ env.LANGUAGES }}
 
       - name: "Magento 2: dump optimized Composer autoload files"
         if: success()
         shell: "bash"
         run: |
-          composer --working-dir=${{ env.WORKING_DIR }} dump-autoload --optimize --apcu --no-dev
+          composer ${{ env.VERBOSITY }} --working-dir=${{ env.WORKING_DIR }} dump-autoload --optimize --apcu --no-dev
 
       - name: "Magento 2: normalize filesystem permissions"
         if: success()
@@ -172,7 +178,8 @@ jobs:
         uses: "deployphp/action@v1"
         if: success()
         with:
-          dep: "deploy:artifact ${{ env.DEPLOY_TARGET }} -v"
+          dep: "deploy:artifact ${{ env.DEPLOY_TARGET }}"
           deployer-binary: "/usr/local/bin/deployer"
           known-hosts: "${{ env.KNOWN_HOSTS }}"
           private-key: "${{ secrets.deploy-ssh-key }}"
+          verbosity: "${{ env.VERBOSITY }}"
