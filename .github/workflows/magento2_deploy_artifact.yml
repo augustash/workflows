@@ -13,6 +13,11 @@ on:
         description: "The deployment target environment"
         required: true
         type: "string"
+      jobs:
+        default: "2"
+        description: "The number of static asset jobs"
+        required: true
+        type: "string"
       languages:
         default: "en_US"
         required: true
@@ -47,6 +52,7 @@ on:
 
 env:
   DEPLOY_TARGET: "${{ inputs.deploy-target }}"
+  JOBS: "${{ inputs.jobs }}"
   LANGUAGES: "${{ inputs.languages }}"
   PHP_VERSION: "${{ inputs.php-version }}"
   WORKING_DIR: "${{ github.workspace }}${{ inputs.working-directory }}"
@@ -56,7 +62,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: "${{ inputs.deploy-environment }}"
-      url: "${{ vars.SITE_URL }}"
+      url: "${{ vars.SITE_URL || env.SITE_URL }}"
     outputs:
       composer-cache-dir: "${{ steps.composer-cache.outputs.dir }}"
     steps:
@@ -121,11 +127,12 @@ jobs:
           touch ${{ env.WORKING_DIR }}/app/etc/env.php
           echo '<?php return ["MAGE_MODE" => "production"];' > ${{ env.WORKING_DIR }}/app/etc/env.php
 
+        # If this fails, make sure you ran `bin/magento app:config:dump scopes themes`
       - name: "Magento 2: generate static content assets"
         if: success()
         shell: "bash"
         run: |
-          php ${{ env.WORKING_DIR }}/bin/magento setup:static-content:deploy -f --no-interaction --jobs 2 -- ${{ env.LANGUAGES }}
+          php ${{ env.WORKING_DIR }}/bin/magento setup:static-content:deploy -f --no-interaction --jobs ${{ env.JOBS }} -- ${{ env.LANGUAGES }}
 
       - name: "Magento 2: dump optimized Composer autoload files"
         if: success()
